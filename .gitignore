@@ -1,0 +1,27 @@
+# Ignore virtual environment directory
+env/
+venv/
+
+# Ignore configuration file
+.deployment
+swagger_openapi.yml
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore log files and temporary files
+*.log
+*.tmp
+
+# Ignore IDE/editor-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS-specific files (e.g., MacOS)
+.DS_Store
+Thumbs.db

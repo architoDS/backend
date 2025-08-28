@@ -1,0 +1,95 @@
+---
+trigger:
+  - main
+
+variables:
+  - group: ui-backend-dr
+  - name: System.Debug
+    value: true
+
+stages:
+  - stage: Build
+    displayName: Build stage
+    jobs:
+      - job: BuildJob
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+            displayName: Deploying Python 3.12
+
+          - script: |
+              python -m venv antenv
+              source antenv/bin/activate
+              python -m pip install --upgrade pip
+              pip install setup
+              pip install -r requirements.txt
+              pip list
+            displayName: Install requirements
+          
+          - task: SonarQubePrepare@7
+            inputs:
+                SonarQube: 'AIFoundationSonarQube'
+                scannerMode: 'cli'
+                configMode: 'manual'
+                cliProjectKey: 'AI-Foundation-UI-Backend'
+                cliProjectName: 'AI-Foundation-UI-Backend'
+                cliSources: '.'
+                extraProperties: |
+                  # sonar.verbose=true
+                  # sonar.sources='.'
+                  # sonar.sourceEncoding=UTF-8
+                  # sonar.inclusions='**/*.py'
+                  sonar.exclusions=/*.cpp,**/*.c,**/*.h,**/*.hpp
+                  sonar.exclusions=antenv/**
+
+          - task: SonarQubeAnalyze@7
+            inputs:
+              jdkversion: 'JAVA_HOME_17_X64'
+
+          - task: SonarQubePublish@7
+            inputs:
+              pollingTimeoutSec: '300'
+
+          - task: ArchiveFiles@2
+            displayName: 'Archive files'
+            inputs:
+              rootFolderOrFile: '$(Build.SourcesDirectory)/'
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+              replaceExistingArchive: true
+
+          - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+            displayName: Upload package
+            artifact: UI_backend
+
+  - stage: dr
+    displayName: 'Deploy to DR'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeploymentJob
+        pool:
+          vmImage: ubuntu-latest
+        environment: dr
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: UsePythonVersion@0
+                  inputs:
+                    versionSpec: "3.12"
+                  displayName: Install Python
+                - task: AzureWebApp@1
+                  displayName: Deploy Azure Web App
+                  inputs:
+                    azureSubscription: $(AZURE_SUBSCRIPTION)
+                    appName: $(APP_SERVICE_NAME)
+                    appType: webAppLinux
+                    package: $(Pipeline.Workspace)/UI_backend/$(Build.BuildId).zip
+                    Clean: true

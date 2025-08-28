@@ -1,0 +1,72 @@
+---
+trigger:
+  - main
+
+variables:
+  - group: ui-backend-qa
+  - name: System.Debug
+    value: true
+
+stages:
+  - stage: Build
+    displayName: Build stage
+    jobs:
+      - job: BuildJob
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: "3.12"
+            displayName: Deploying Python 3.12
+
+          - script: |
+              python -m venv antenv
+              source antenv/bin/activate
+              python -m pip install --upgrade pip
+              pip install setup
+              pip install -r requirements.txt
+              pip list
+            displayName: Install requirements
+          
+          - task: ArchiveFiles@2
+            displayName: 'Archive files'
+            inputs:
+              rootFolderOrFile: '$(Build.SourcesDirectory)/'
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+              replaceExistingArchive: true
+
+          - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+            displayName: Upload package
+            artifact: UI_backend
+
+  - stage: qa
+    displayName: 'Deploy to QA'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeploymentJob
+        pool:
+          vmImage: ubuntu-latest
+        environment: qa
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: UsePythonVersion@0
+                  inputs:
+                    versionSpec: "3.12"
+                  displayName: Install Python
+                - task: AzureWebApp@1
+                  displayName: Deploy Azure Web App
+                  inputs:
+                    azureSubscription: $(AZURE_SUBSCRIPTION)
+                    appName: $(APP_SERVICE_NAME)
+                    appType: webAppLinux
+                    package: $(Pipeline.Workspace)/UI_backend/$(Build.BuildId).zip
+                    Clean: true
+
